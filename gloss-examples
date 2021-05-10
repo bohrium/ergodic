@@ -1,0 +1,21 @@
+Warning: could not create symlinks in /home/sam/.cabal/bin for gloss-bitmap,
+gloss-boids, gloss-clock, gloss-color, gloss-conway, gloss-draw, gloss-easy,
+gloss-eden, gloss-flake, gloss-gameevent, gloss-hello, gloss-lifespan,
+gloss-machina, gloss-occlusion, gloss-styrene, gloss-tree, gloss-visibility,
+gloss-zen, gloss-crystal, gloss-ray, gloss-pulse, gloss-wave, gloss-snow,
+gloss-mandel, gloss-graph, gloss-gravity because the files exist there already
+and are not managed by cabal. You can create symlinks for these executables
+manually if you wish. The executable files have been installed at
+/home/sam/.cabal/bin/gloss-bitmap, /home/sam/.cabal/bin/gloss-boids,
+/home/sam/.cabal/bin/gloss-clock, /home/sam/.cabal/bin/gloss-color,
+/home/sam/.cabal/bin/gloss-conway, /home/sam/.cabal/bin/gloss-draw,
+/home/sam/.cabal/bin/gloss-easy, /home/sam/.cabal/bin/gloss-eden,
+/home/sam/.cabal/bin/gloss-flake, /home/sam/.cabal/bin/gloss-gameevent,
+/home/sam/.cabal/bin/gloss-hello, /home/sam/.cabal/bin/gloss-lifespan,
+/home/sam/.cabal/bin/gloss-machina, /home/sam/.cabal/bin/gloss-occlusion,
+/home/sam/.cabal/bin/gloss-styrene, /home/sam/.cabal/bin/gloss-tree,
+/home/sam/.cabal/bin/gloss-visibility, /home/sam/.cabal/bin/gloss-zen,
+/home/sam/.cabal/bin/gloss-crystal, /home/sam/.cabal/bin/gloss-ray,
+/home/sam/.cabal/bin/gloss-pulse, /home/sam/.cabal/bin/gloss-wave,
+/home/sam/.cabal/bin/gloss-snow, /home/sam/.cabal/bin/gloss-mandel,
+/home/sam/.cabal/bin/gloss-graph, /home/sam/.cabal/bin/gloss-gravity
