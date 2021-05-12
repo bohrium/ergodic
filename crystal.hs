@@ -4,106 +4,140 @@ import Graphics.Gloss
 import Graphics.Gloss.Interface.Environment
 import System.Random
 
--- x, y, dx, dy
-type Particle
-        = (Float, Float, Float, Float)
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- ~~~~~~~~  0. Simulation Parameters  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+-- (d/dt)^2 x = Y 2 (cos(tau k/N)-1) x
+-- x = C exp(tau t/T) --> tau T = sqrt(2Y (1 - cos(tau k/N)))
+-- energy = (N/2) * 2Y (cos(tau k/N)-1)^2 * amplitude^2/2
 
+enum xs = zip [0..] xs
+
+type Particle = (Float, Float) -- Position q, Momentum p
+get_q :: Particle -> Float
+get_p :: Particle -> Float
+get_q (q,_) = q
+get_p (_,p) = p
+
+type RenderableState = ([Particle], [Float], [Float])
+get_qs     ::RenderableState->[Float]
+get_fourier::RenderableState->[Float]
+get_avg    ::RenderableState->[Float]
+get_qs      (qps,_,_) = map get_q qps
+get_fourier (_  ,f,_) = f
+get_avg     (_  ,_,a) = a
 
 nb::Int
-nb = 128
+nb = 64
+
 half::Int
 half = nb `div` 2
 
-youngs::Float
-youngs = 0.0001
-lambda::Float
-lambda = 0.5
+tau::Float
+tau = 2*pi
+costau::Float->Float
+sintau::Float->Float
+costau z = cos (tau*z) 
+sintau z = sin (tau*z) 
 
+konst::Float
+konst = 10.0
+lambda::Float
+lambda = 0.0 --0.5
+
+time_step::Float
+time_step = 0.01
+
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- ~~~~~~~~  1. Rendering and Main Loop  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 main :: IO ()
 main
- = do   g <- getStdGen
-        (width,height) <- getScreenSize
-        let initialstate = generateParticles g width height
-        simulate window background fps initialstate render update
- where
-        window          = FullScreen
-        background      = black
-        fps             = 30
-        render xs       = (pictures $
-                            (map (particleImage white) (take nb xs)) ++
-                            (map (particleImage blue) (take half $ drop nb xs))++ 
-                            (map (particleImage red) (drop (nb+half) xs))) 
-        update _ dt     = updateParticles 0.20
+  = do g <- getStdGen
+       (width, height) <- getScreenSize
+       let initial_state = (generateParticles g width height,
+                            replicate half 0.0,
+                            replicate half 0.0)
+       simulate window background fps initial_state render update
+    where window      = FullScreen
+          background  = black
+          fps         = 30
+          render state = (pictures $
+                          (graphImage white 0.0 0.05 (-0.75) 1.00 $ get_qs      state) ++
+                          (graphImage blue  0.0 0.05 ( 0.50) 3.00 $ get_fourier state) ++ 
+                          (graphImage red   0.0 0.05 ( 1.20) 1.00 $ get_avg     state)) 
+          update _ _ = updateParticles time_step
 
 toF :: Int -> Float
 toF n = fromIntegral n::Float
 
--- | Generates particles from StdGen
+-- | initial conditions
 generateParticles :: StdGen -> Int -> Int -> [Particle]
 generateParticles gen widthInt heightInt
- = map (g . f) [0 .. (nb-1+half+half)]
+ = map f [0 .. (nb-1)]
  where
-        f = \n -> ((fromIntegral n::Float) / (fromIntegral nb::Float) - 0.5,
-                   0.0, 0.0, 0.00*cos ((toF n) * 2.0 * (pi::Float)/(toF nb))
-                             + (if 5<=n && n<10 then 0.01 else 0.0) - (10-5)*0.01/(toF nb)  
-                             + (if 8<=n && n<9  then 0.01 else 0.0) - ( 9-8)*0.01/(toF nb)) 
-        g = \(x,y,p_x,p_y) -> (
-                x*1,y*1,p_x*1,p_y*1
-            )
+        f n = (0.30 * costau(0.618 + 2.0 * (toF n)/nbF)+
+               0.30 * costau(0.000 + 3.0 * (toF n)/nbF),
+               0.30 * costau(0.618 + 5.0 * (toF n)/nbF)+ 
+               0.30 * costau(0.000 + 7.0 * (toF n)/nbF))
+        nbF = toF nb
 
-get_y :: Particle -> Float
-get_y (_,y,_,_) = y
-get_p :: Particle -> Float
-get_p (_,_,_,p) = p
-
-fourier :: Int -> [Particle] -> Particle
-fourier k ps
-    = (0.01*kF, -0.5+2*sqrt((yya^2+yyb^2)*kF*kF+(ppa^2+ppb^2)/youngs), 0, 0)
+fourier :: Int -> [Particle] -> Float
+fourier k qps
+  = sqrt $ ( eff_konstant*(qqa^2+qqb^2) + (ppa^2+ppb^2) ) / 2
     where
-        yya = (sum $ map (\n -> (cos ((toF k) * (toF n) * scale))*(get_y (ps!!n))) [0 .. (nb-1)]) / (toF nb)
-        yyb = (sum $ map (\n -> (sin ((toF k) * (toF n) * scale))*(get_y (ps!!n))) [0 .. (nb-1)]) / (toF nb)
-        ppa = (sum $ map (\n -> (cos ((toF k) * (toF n) * scale))*(get_p (ps!!n))) [0 .. (nb-1)]) / (toF nb)
-        ppb = (sum $ map (\n -> (sin ((toF k) * (toF n) * scale))*(get_p (ps!!n))) [0 .. (nb-1)]) / (toF nb)
-        scale = 2*(pi::Float)/(toF nb)
-        kF = toF k
+        qqa = (sum $ map (\(n,(q,p)) -> (cos_scale n) * q) $ enum qps) / nbF
+        qqb = (sum $ map (\(n,(q,p)) -> (sin_scale n) * q) $ enum qps) / nbF
+        ppa = (sum $ map (\(n,(q,p)) -> (cos_scale n) * p) $ enum qps) / nbF
+        ppb = (sum $ map (\(n,(q,p)) -> (sin_scale n) * p) $ enum qps) / nbF
+        cos_scale n = costau ((toF k)*(toF n)/nbF) 
+        sin_scale n = sintau ((toF k)*(toF n)/nbF) 
+        nbF = toF nb 
+        eff_konstant = konst * ((sin_scale 1)^2 + (1 - cos_scale 1)^2)
 
--- | Particle to its picture
-particleImage :: Color -> Particle -> Picture
-particleImage c (x,y,_,_)
- = translate (960*x) (960*y) $ color c $ circleSolid 2
+-- | graph to its pictures
+graphImage :: Color -> Float -> Float -> Float -> Float -> [Float] -> [Picture]
+graphImage c x dx y dy fs
+ = map (\(n,f) -> translate (pix*(horiz n)) (pix*(verti f)) dot) $ enum fs
+   where horiz n = x + dx * ((toF n)-(toF $ length fs)/2) 
+         verti f = y + dy * f 
+         dot = color c $ circleSolid 3
+         pix = 240 
 
--- | To update particles for next frame
-updateParticles :: Float -> [Particle] -> [Particle]
-updateParticles half_dt ps
- = physicals ++ now_freqs ++ avg_freqs
-    where physicals = (update_atom . update_atom . update_atom) (take nb ps)
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- ~~~~~~~~  2. Physical Dynamics  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+-- | to update particles for next frame
+updateParticles :: Float -> RenderableState -> RenderableState
+updateParticles half_dt (qps,fs,as)
+ = (physicals,now_freqs,avg_freqs) 
+    where physicals = (update_atom . update_atom . update_atom) qps
           update_atom = (  (accelerateParticles    half_dt) 
                          . (moveParticles       (2*half_dt)) 
                          . (accelerateParticles    half_dt)) 
           now_freqs = (map (\k -> fourier k physicals) [0 .. (half-1)])
-          avg_freqs = [(x, y+0.01*((y_new+0.25)-y),0,0) | ((x,y_new,_,_),(_,y,_,_)) <- take half $ zip (drop nb ps) (drop (nb + half) ps)]
+          avg_freqs = [a + 0.0025 * (f-a) | (f,a) <- zip fs as]
 
--- | Moves particles based on their speed
+-- | moves particles based on their speed
 moveParticles :: Float -> [Particle] -> [Particle]
 moveParticles dt
- = map (\(x,y,dx,dy) -> (x+dx*dt,y+dy*dt,dx,dy))
+ = map (\(q, p) -> (q + p*dt, p))
 
--- | Accelerates particles based on gravity
+-- | accelerates particles based on spring forces
 accelerateParticles :: Float -> [Particle] -> [Particle]
 accelerateParticles dt ps
  = [accelerated_at dt ps i    | i <- [0..(nb-1)]]
 
 accelerated_at :: Float -> [Particle] -> Int -> Particle
-accelerated_at dt ps i
-    = (x,ya,px,py+dt*(force_from yz ya yb))
-      where (_,yz, _, _) = ps!!((i-1) `mod` nb)
-            (x,ya,px,py) = ps!!( i    `mod` nb)
-            (_,yb, _, _) = ps!!((i+1) `mod` nb)
+accelerated_at dt qps i
+    = (qa, pa+(force_from qz qa qb)*dt)
+      where (qz, _) = qps!!((i-1) `mod` nb)
+            (qa,pa) = qps!!( i    `mod` nb)
+            (qb, _) = qps!!((i+1) `mod` nb)
 
 force_from :: Float -> Float -> Float -> Float 
-force_from z a b =
-    (youngs*(toF nb)*(pi::Float)) * 
-            ((z-a) * (1.0 + lambda * ((z-a)*(toF nb))^2) + 
-             (b-a) * (1.0 + lambda * ((b-a)*(toF nb))^2)) 
+force_from z a b  
+  = konst * (za * (1.0 + lambda * za^2) + 
+             ba * (1.0 + lambda * ba^2)) 
+    where za = (z-a)
+          ba = (b-a) 
