@@ -19,13 +19,14 @@ get_p :: Particle -> Float
 get_q (q,_) = q
 get_p (_,p) = p
 
-type RenderableState = ([Particle], [Float], [Float])
+type RenderableState = (Int, [Particle], [Float], [Float])
 get_qs     ::RenderableState->[Float]
 get_fourier::RenderableState->[Float]
 get_avg    ::RenderableState->[Float]
-get_qs      (qps,_,_) = map get_q qps
-get_fourier (_  ,f,_) = f
-get_avg     (_  ,_,a) = a
+get_i       (i,qps,_,_) = i
+get_qs      (i,qps,_,_) = map get_q qps
+get_fourier (i,_  ,f,_) = f
+get_avg     (i,_  ,_,a) = a
 
 nb::Int
 nb = 64
@@ -41,12 +42,12 @@ costau z = cos (tau*z)
 sintau z = sin (tau*z) 
 
 konst::Float
-konst = 10.0
+konst = 0.5 
 lambda::Float
-lambda = 0.0 --0.5
+lambda = 1.0
 
 time_step::Float
-time_step = 0.01
+time_step = 0.10
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- ~~~~~~~~  1. Rendering and Main Loop  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -55,17 +56,20 @@ main :: IO ()
 main
   = do g <- getStdGen
        (width, height) <- getScreenSize
-       let initial_state = (generateParticles g width height,
+       let initial_state = (0,physicals,
                             replicate half 0.0,
-                            replicate half 0.0)
+                            getFour physicals)
+            where physicals = generateParticles g width height
        simulate window background fps initial_state render update
     where window      = FullScreen
           background  = black
-          fps         = 30
+          fps         = 60
           render state = (pictures $
-                          (graphImage white 0.0 0.05 (-0.75) 1.00 $ get_qs      state) ++
-                          (graphImage blue  0.0 0.05 ( 0.50) 3.00 $ get_fourier state) ++ 
-                          (graphImage red   0.0 0.05 ( 1.20) 1.00 $ get_avg     state)) 
+                          (graphImage white  0.0 0.05 (-0.75) 0.25 $ get_qs      state) ++
+                          (graphImage violet 0.0 0.05 ( 0.50) 4.00 $ replicate half 0.0)++
+                          (graphImage blue   0.0 0.05 ( 0.50) 4.00 $ map sqrt $ get_fourier state) ++ 
+                          (graphImage violet 0.0 0.05 ( 1.20) 4.00 $ replicate half 0.0)++
+                          (graphImage red    0.0 0.05 ( 1.20) 4.00 $ map sqrt $ get_avg     state))
           update _ _ = updateParticles time_step
 
 toF :: Int -> Float
@@ -74,17 +78,17 @@ toF n = fromIntegral n::Float
 -- | initial conditions
 generateParticles :: StdGen -> Int -> Int -> [Particle]
 generateParticles gen widthInt heightInt
- = map f [0 .. (nb-1)]
- where
-        f n = (0.30 * costau(0.618 + 2.0 * (toF n)/nbF)+
-               0.30 * costau(0.000 + 3.0 * (toF n)/nbF),
-               0.30 * costau(0.618 + 5.0 * (toF n)/nbF)+ 
-               0.30 * costau(0.000 + 7.0 * (toF n)/nbF))
-        nbF = toF nb
+  = map f [0 .. (nb-1)]
+    where f n = ((sum $ map (\k -> (1.5/(toF k)) * (cos_scale k n)           ) [1..10]),  
+                 (sum $ map (\k -> (1.5/(toF k)) * (sin_scale k n) * (pamp k)) [1..10])) 
+          cos_scale k n = costau ((toF k)*(toF n)/nbF) 
+          sin_scale k n = sintau ((toF k)*(toF n)/nbF) 
+          nbF = toF nb
+          pamp k = sqrt $ konst * ((sin_scale k 1)^2 + (1 - cos_scale k 1)^2)
 
 fourier :: Int -> [Particle] -> Float
 fourier k qps
-  = sqrt $ ( eff_konstant*(qqa^2+qqb^2) + (ppa^2+ppb^2) ) / 2
+  = eff_konstant*(qqa^2+qqb^2) + (ppa^2+ppb^2)
     where
         qqa = (sum $ map (\(n,(q,p)) -> (cos_scale n) * q) $ enum qps) / nbF
         qqb = (sum $ map (\(n,(q,p)) -> (sin_scale n) * q) $ enum qps) / nbF
@@ -109,14 +113,19 @@ graphImage c x dx y dy fs
 
 -- | to update particles for next frame
 updateParticles :: Float -> RenderableState -> RenderableState
-updateParticles half_dt (qps,fs,as)
- = (physicals,now_freqs,avg_freqs) 
-    where physicals = (update_atom . update_atom . update_atom) qps
+updateParticles half_dt (i,qps,fs,as)
+ = (i+1,physicals,now_freqs,avg_freqs) 
+    where physicals = super_update qps
           update_atom = (  (accelerateParticles    half_dt) 
                          . (moveParticles       (2*half_dt)) 
                          . (accelerateParticles    half_dt)) 
-          now_freqs = (map (\k -> fourier k physicals) [0 .. (half-1)])
-          avg_freqs = [a + 0.0025 * (f-a) | (f,a) <- zip fs as]
+          now_freqs = getFour physicals 
+          avg_freqs = [a + 0.002 * (f-a) | (f,a) <- zip fs as]
+          super_update = if i `mod` 2 == 0
+                         then (update_atom . update_atom . update_atom . update_atom . update_atom) 
+                         else (update_atom . update_atom . update_atom . update_atom) 
+
+getFour physicals = (map (\k -> fourier k physicals) [0 .. (half-1)])
 
 -- | moves particles based on their speed
 moveParticles :: Float -> [Particle] -> [Particle]
